@@ -15,6 +15,12 @@
 #include "hardware/flash.h"
 #include "hardware/irq.h"
 
+#if PICO_SDK_VERSION_MAJOR >= 2 || (PICO_SDK_VERSION_MAJOR == 1 && (PICO_SDK_VERSION_MINOR > 6 || PICO_SDK_VERSION_MINOR == 6 && PICO_SDK_VERSION_REVISION >= 2 ))
+/* https://github.com/raspberrypi/pico-sdk/issues/712 */
+#include "hardware/clocks.h"
+#endif
+
+
 #include "stdio_async_uart.h"
 
 #include "n64_cic.h"
