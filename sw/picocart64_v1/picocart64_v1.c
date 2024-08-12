@@ -20,7 +20,6 @@
 #include "hardware/clocks.h"
 #endif
 
-
 #include "stdio_async_uart.h"
 
 #include "n64_cic.h"
