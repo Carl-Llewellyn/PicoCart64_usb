@@ -98,7 +98,7 @@ jobs:
           cp picocart64_v1/picocart64_v1.uf2 /ci/artifacts/picocart64-v1-ntsc-133MHz.uf2"
 
     - name: Upload PicoCart64 binaries with a bundled test rom to artifacts
-      uses: actions/upload-artifact@v2
+      uses: actions/upload-artifact@v3
       with:
         name: picocart64
         path: |
