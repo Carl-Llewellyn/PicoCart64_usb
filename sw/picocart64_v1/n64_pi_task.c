@@ -91,6 +91,41 @@ void n64_pi_run(void)
 		// most timing critical to least.
 		if (last_addr >= CART_DOM1_ADDR2_START && last_addr <= CART_DOM1_ADDR2_END) {
 			// Domain 1, Address 2 Cartridge ROM
+
+#if CONFIG_ROM_HEADER_OVERRIDE != 0
+			if (last_addr == 0x10000000) {
+				// Special case to patch PI access speed paramenters
+
+				// 16 MSB
+				next_word = CONFIG_ROM_HEADER_OVERRIDE >> 16;
+				addr = n64_pi_get_value(pio);
+				if (addr == 0) {
+					// READ
+					pio_sm_put(pio, 0, next_word);
+				} else if ((addr & 0xffff0000) == 0xffff0000) {
+					// WRITE, ignore
+				} else {
+					// New address
+					continue;
+				}
+				last_addr += 2;
+
+				// 16 LSB
+				next_word = CONFIG_ROM_HEADER_OVERRIDE & 0xFFFF;
+				addr = n64_pi_get_value(pio);
+				if (addr == 0) {
+					// READ
+					pio_sm_put(pio, 0, next_word);
+				} else if ((addr & 0xffff0000) == 0xffff0000) {
+					// WRITE, ignore
+				} else {
+					// New address
+					continue;
+				}
+				last_addr += 2;
+			}
+#endif
+
 			do {
 				// Pre-fetch from the address
 #if COMPRESSED_ROM

@@ -53,38 +53,52 @@ jobs:
     - name: Build testrom using the libdragon docker image
       run: |
         docker run \
-        --mount type=bind,source=$(pwd),target=/ci \
-        --workdir=/ci \
-        ghcr.io/dragonminded/libdragon:latest \
-        bash -c "\
-          git config --global --add safe.directory /ci/picocart64          && \
-          (cd libdragon && ./build.sh)                                     && \
-          make -C ./picocart64/sw/n64/testrom"
-        mkdir artifacts
-        cp ./picocart64/sw/n64/testrom/build/testrom.z64 ./artifacts/
+          --mount type=bind,source=$(pwd),target=/ci \
+          --workdir=/ci \
+          ghcr.io/dragonminded/libdragon:latest \
+          bash -c "\
+            git config --global --add safe.directory /ci/picocart64          && \
+            (cd libdragon && ./build.sh)                                     && \
+            make -C ./picocart64/sw/n64/testrom                              && \
+            echo 'we came this far'                                          && \
+            mkdir -p artifacts                                               && \
+            find .                                                           && \
+            cp ./picocart64/sw/n64/testrom/testrom.z64 ./artifacts/  "
 
     - name: Prepare test ROM for build
-      run: python3 picocart64/sw/scripts/load_rom.py --compress picocart64/sw/n64/testrom/build/testrom.z64
+      run: python3 picocart64/sw/scripts/load_rom.py --compress picocart64/sw/n64/testrom/testrom.z64
 
     - name: Build PicoCart64 using the pico-sdk-builder docker image
       run: |
         docker run \
         --mount type=bind,source=$(pwd),target=/ci \
         --workdir=/ci \
-        ghcr.io/kbeckmann/pico-sdk-builder:latest \
+        ghcr.io/kbeckmann/pico-sdk-builder:ubuntu-24.04 \
         bash -c "\
-          git config --global --add safe.directory /ci/picocart64                  && \
-          mkdir picocart64/sw/build                                                && \
-          cd picocart64/sw/build                                                   && \
-          cmake -DREGION=PAL ..                                                    && \
-          make                                                                     && \
-          cp picocart64_v1/picocart64_v1.uf2 /ci/artifacts/picocart64-v1-pal.uf2   && \
-          cmake -DREGION=NTSC ..                                                   && \
-          make                                                                     && \
-          cp picocart64_v1/picocart64_v1.uf2 /ci/artifacts/picocart64-v1-ntsc.uf2"
+          git config --global --add safe.directory /ci/picocart64                    && \
+          mkdir picocart64/sw/build                                                  && \
+          cd picocart64/sw/build                                                     && \
+          cmake -DREGION=PAL ..                                                      && \
+          make                                                                       && \
+          cp picocart64_v1/picocart64_v1.uf2 /ci/artifacts/picocart64-v1-pal.uf2     && \
+                                                                                        \
+          cd .. && rm -rf build && mkdir build && cd build                           && \
+          cmake -DREGION=NTSC ..                                                     && \
+          make                                                                       && \
+          cp picocart64_v1/picocart64_v1.uf2 /ci/artifacts/picocart64-v1-ntsc.uf2    && \
+                                                                                        \
+          cd .. && rm -rf build && mkdir build && cd build                           && \
+          cmake -DREGION=PAL -DCPU_FREQ_MHZ=133 -DROM_HEADER_OVERRIDE=0x80372040 ..  && \
+          make                                                                       && \
+          cp picocart64_v1/picocart64_v1.uf2 /ci/artifacts/picocart64-v1-pal-133MHz.uf2 && \
+                                                                                        \
+          cd .. && rm -rf build && mkdir build && cd build                           && \
+          cmake -DREGION=NTSC -DCPU_FREQ_MHZ=133 -DROM_HEADER_OVERRIDE=0x80372040 .. && \
+          make                                                                       && \
+          cp picocart64_v1/picocart64_v1.uf2 /ci/artifacts/picocart64-v1-ntsc-133MHz.uf2"
 
     - name: Upload PicoCart64 binaries with a bundled test rom to artifacts
-      uses: actions/upload-artifact@v2
+      uses: actions/upload-artifact@v3
       with:
         name: picocart64
         path: |

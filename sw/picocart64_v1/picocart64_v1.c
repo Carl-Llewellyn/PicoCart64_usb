@@ -96,7 +96,8 @@ void cic_task_entry(__unused void *params)
 	n64_cic_task(sram_save_to_flash);
 }
 
-void second_task_entry(__unused void *params)
+#if 0
+static void second_task_entry(__unused void *params)
 {
 	uint32_t count = 0;
 
@@ -126,11 +127,12 @@ void second_task_entry(__unused void *params)
 
 	}
 }
+#endif
 
 void vLaunch(void)
 {
 	xTaskCreateStatic(cic_task_entry, "CICThread", configMINIMAL_STACK_SIZE, NULL, CIC_TASK_PRIORITY, cic_task_stack, &cic_task);
-	xTaskCreateStatic(second_task_entry, "SecondThread", configMINIMAL_STACK_SIZE, NULL, SECOND_TASK_PRIORITY, second_task_stack, &second_task);
+	// xTaskCreateStatic(second_task_entry, "SecondThread", configMINIMAL_STACK_SIZE, NULL, SECOND_TASK_PRIORITY, second_task_stack, &second_task);
 
 	/* Start the tasks and timer running. */
 	vTaskStartScheduler();
@@ -159,8 +161,7 @@ int main(void)
 	// but since it's used with a 2x clock divider,
 	// 266 MHz is safe in this regard.
 
-	// set_sys_clock_khz(133000, true);
-	set_sys_clock_khz(266000, true);	// Required for SRAM @ 200ns
+	set_sys_clock_khz(CONFIG_CPU_FREQ_MHZ * 1000, true);
 
 	// Init GPIOs before starting the second core and FreeRTOS
 	for (int i = 0; i <= 27; i++) {
@@ -185,6 +186,8 @@ int main(void)
 	// Init UART on pin 28/29
 	stdio_async_uart_init_full(UART_ID, BAUD_RATE, UART_TX_PIN, UART_RX_PIN);
 	printf("PicoCart64 Boot (git rev %08x)\r\n", GIT_REV);
+	printf("  CPU_FREQ_MHZ=%d\n", CONFIG_CPU_FREQ_MHZ);
+	printf("  ROM_HEADER_OVERRIDE=%08lX\n", CONFIG_ROM_HEADER_OVERRIDE);
 
 #if ENABLE_N64_PI
 	// Launch the N64 PI implementation in the second core
