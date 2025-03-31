@@ -7,6 +7,19 @@
 #pragma once
 
 #include <stdint.h>
+#include "FreeRTOS.h"
+#include "semphr.h"
+
+// Buffer for USB data
+#define USB_BUFFER_SIZE 8
+static uint8_t __attribute__((aligned(16))) usb_buffer[USB_BUFFER_SIZE];
+extern uint32_t usb_bytes_received;
+extern _Atomic uint32_t read_word;
+
+extern SemaphoreHandle_t xMutex;
+
+// Function to initialize the mutex.
+void initMutex(void);
 
 /// @brief Macro to get the size of an array
 #define ARRAY_SIZE(x) (sizeof(x)/sizeof(x[0]))

@@ -7,8 +7,15 @@
 #include "utils.h"
 
 #include <stdio.h>
+#include "FreeRTOS.h"
+#include <stdatomic.h>
+
 
 #include "hardware/watchdog.h"
+
+static uint8_t __attribute__((aligned(16))) usb_buffer[USB_BUFFER_SIZE] = {0};
+uint32_t usb_bytes_received = 0;
+_Atomic uint32_t read_word;
 
 void assert_handler(char *file, int line, char *statement)
 {

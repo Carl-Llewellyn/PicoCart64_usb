@@ -38,3 +38,6 @@
 
 // [READ]: Returns the JEDEC ID of the flash chip
 #define PC64_REGISTER_FLASH_JEDEC_ID 0x0000000C
+
+// [READ] RX BUFF
+#define PC64_REGISTER_UART_RX 0x00000010
