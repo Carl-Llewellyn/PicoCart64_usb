@@ -1,4 +1,4 @@
-# PicoCart64
+# Fork of PicoCart64 to enable USB comms, overwriting UART. See usb beanch for details.
 Nintendo 64 flash cart using a Raspberry Pi Pico / RP2040. So far, all of the work happens in the `develop` branch and is highly experimental. Follow kbeckmann on [twitter](https://twitter.com/kbeckmann) to follow along while he's working on the project.
 
 Join the Discord server to participate in the discussion and development of this project.
