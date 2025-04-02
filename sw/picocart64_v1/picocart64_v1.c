@@ -107,15 +107,17 @@ static void second_task_entry(__unused void *params)
 #define USB_TASK_PRIORITY (tskIDLE_PRIORITY + 1)
 
 // Static allocation for USB task
-StaticTask_t usb_task;
-StackType_t usb_task_stack[USB_TASK_STACK_SIZE];
+StaticTask_t incoming_usb_task;
+StackType_t incoming_usb_task_stack[USB_TASK_STACK_SIZE];
+
+
 
 uint32_t swap_endianness(uint32_t value) {
   return ((value >> 24) & 0x000000FF) | ((value >> 8) & 0x0000FF00) |
          ((value << 8) & 0x00FF0000) | ((value << 24) & 0xFF000000);
 }
 
-void usb_task_entry(void *pvParameters) {
+void incoming_usb_task_entry(void *pvParameters) {
 
   while (true) {
     // Wait until USB is connected
@@ -127,7 +129,7 @@ void usb_task_entry(void *pvParameters) {
     if (tud_cdc_available()) {
       usb_bytes_received = tud_cdc_read(usb_buffer, USB_BUFFER_SIZE);
       if (usb_bytes_received >= sizeof(uint32_t)) {
-          read_word = __builtin_bswap32(*(uint32_t *)usb_buffer);
+        incoming_usb_store_word = __builtin_bswap32(*(uint32_t *)usb_buffer);
       }
     }
   }
@@ -136,6 +138,30 @@ void usb_task_entry(void *pvParameters) {
   vTaskDelay(pdMS_TO_TICKS(10));
 }
 
+
+StaticTask_t outgoing_usb_task;
+StackType_t outgoing_usb_task_stack[USB_TASK_STACK_SIZE];
+void outgoing_usb_task_entry(void *pvParameters) {
+
+  uint32_t lastSentData = 0;
+
+  while (true) {
+    // Wait until USB is connected
+    while (!tud_cdc_connected()) {
+      vTaskDelay(pdMS_TO_TICKS(100));
+    }
+
+    if (lastSentData != outgoing_usb_store_word) {
+      printf("MARIO: 0x%08X.\n", outgoing_usb_store_word);
+      lastSentData = outgoing_usb_store_word;
+    }
+  }
+
+  // Yield to other tasks
+  vTaskDelay(pdMS_TO_TICKS(10));
+}
+
+
 void vLaunch(void) {
   xTaskCreateStatic(cic_task_entry, "CICThread", configMINIMAL_STACK_SIZE, NULL,
                     CIC_TASK_PRIORITY, cic_task_stack, &cic_task);
@@ -143,9 +169,14 @@ void vLaunch(void) {
   // configMINIMAL_STACK_SIZE, NULL, SECOND_TASK_PRIORITY, second_task_stack,
   // &second_task);
 
-  xTaskCreateStatic(usb_task_entry, "USBThread", USB_TASK_STACK_SIZE, NULL,
-                    USB_TASK_PRIORITY, usb_task_stack, &usb_task);
-
+  xTaskCreateStatic(incoming_usb_task_entry, "IncomingUSBThread",
+                    USB_TASK_STACK_SIZE, NULL, USB_TASK_PRIORITY,
+                    incoming_usb_task_stack, &incoming_usb_task);
+/*
+  xTaskCreateStatic(outgoing_usb_task_entry, "OutgoingUSBThread",
+                    USB_TASK_STACK_SIZE, NULL, USB_TASK_PRIORITY,
+                    outgoing_usb_task_stack, &outgoing_usb_task);
+*/
   /* Start the tasks and timer running. */
   vTaskStartScheduler();
 }
@@ -176,10 +207,6 @@ int main(void) {
   set_sys_clock_khz(CONFIG_CPU_FREQ_MHZ * 1000, true);
 
   stdio_init_all();
-  //  sleep_ms(2000); // Add a delay here
-  printf("Hello, world!\n");
-  //   sleep_ms(2000); // Add a delay here
-  //  printf("Hello, world!\n");
 
   // Init GPIOs before starting the second core and FreeRTOS
   for (int i = 0; i <= 27; i++) {

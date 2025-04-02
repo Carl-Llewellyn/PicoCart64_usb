@@ -76,6 +76,8 @@ void n64_pi_run(void) {
   // Read addr manually before the loop
   addr = n64_pi_get_value(pio);
 
+  printf("PI_RUN\n");
+
   while (1) {
     // addr must not be a WRITE or READ request here,
     // it should contain a 16-bit aligned address.
@@ -84,7 +86,11 @@ void n64_pi_run(void) {
 
     // We got a start address
     last_addr = addr;
+    // printf("ADDR: = 0x%08X.\n", last_addr);
 
+    // if (last_addr ==  0xBFBF1200 || last_addr == 0x1FBF1200){
+    //    printf("FOUND ADDr: 0x%08X.\n", last_addr);
+    //   }
     // Handle access based on memory region
     // Note that the if-cases are ordered in priority from
     // most timing critical to least.
@@ -146,6 +152,8 @@ void n64_pi_run(void) {
           last_addr += 2;
         } else if ((addr & 0xffff0000) == 0xffff0000) {
           // WRITE
+          // printf("Rw\n");
+          printf("ROM WRITE: ADDR: = 0x%08X.\n", last_addr);
           // Ignore data since we're asked to write to the ROM.
           last_addr += 2;
         } else {
@@ -155,18 +163,19 @@ void n64_pi_run(void) {
       } while (1);
     } else if (last_addr >= CART_SRAM_START && last_addr <= CART_SRAM_END) {
       // Domain 2, Address 2 Cartridge SRAM
-
       // Calculate start pointer
       uint16_t *sram_ptr = &sram[sram_resolve_address_shifted(last_addr)];
-
       do {
         // Read command/address
         addr = n64_pi_get_value(pio);
 
         if ((addr & 0xffff0000) == 0xffff0000) {
-          // WRITE
-          *(sram_ptr++) = addr & 0xFFFF;
-
+          if (last_addr == CART_SRAM_START) {
+            outgoing_usb_store_word =  addr & 0xFFFF;
+          } else {
+            // WRITE
+            *(sram_ptr++) = addr & 0xFFFF;
+          }
           // More readable:
           // sram[sram_resolve_address_shifted(last_addr)] = addr & 0xFFFF;
           // last_addr += 2;
@@ -185,6 +194,7 @@ void n64_pi_run(void) {
       } while (1);
     } else if (last_addr >= PC64_BASE_ADDRESS_START &&
                last_addr <= PC64_BASE_ADDRESS_END) {
+      printf("B\n");
       // PicoCart64 BASE address space
       do {
         // Pre-fetch from the address
@@ -214,6 +224,8 @@ void n64_pi_run(void) {
       } while (1);
     } else if (last_addr >= PC64_RAND_ADDRESS_START &&
                last_addr <= PC64_RAND_ADDRESS_END) {
+      printf("RAND\n");
+
       // PicoCart64 RAND address space
       do {
         // Read command/address
@@ -235,6 +247,8 @@ void n64_pi_run(void) {
     } else if (last_addr >= PC64_CIBASE_ADDRESS_START &&
                last_addr <= PC64_CIBASE_ADDRESS_END) {
       // PicoCart64 CIBASE address space
+      printf("CI\n");
+
       do {
         // Read command/address
         addr = n64_pi_get_value(pio);
@@ -249,10 +263,10 @@ void n64_pi_run(void) {
             next_word = g_flash_jedec_id;
             break;
           case PC64_REGISTER_UART_RX:
-              next_word = read_word;
+            next_word = incoming_usb_store_word;
             break;
           default:
-            printf("DEFAULT");
+            printf("DEFAULT\n");
             next_word = 0;
           }
 
@@ -271,6 +285,7 @@ void n64_pi_run(void) {
           last_addr += 2;
         } else if ((addr & 0xffff0000) == 0xffff0000) {
           // WRITE
+          printf("WR\n");
 
           // Read two 16-bit half-words and merge them to a 32-bit value
           uint32_t write_word = addr << 16;
@@ -278,10 +293,11 @@ void n64_pi_run(void) {
 
           switch (last_addr - PC64_CIBASE_ADDRESS_START) {
           case PC64_REGISTER_UART_TX:
-            // stdio_uart_out_chars((const char *)pc64_uart_tx_buf, write_word &
-            // (sizeof(pc64_uart_tx_buf) - 1));
-            printf("%.*s", write_word & (sizeof(pc64_uart_tx_buf) - 1),
-                   pc64_uart_tx_buf);
+            // stdio_uart_out_chars((const char *)pc64_uart_tx_buf, write_word
+            // & (sizeof(pc64_uart_tx_buf) - 1));
+            //  printf(""%.*s", write_word & (sizeof(pc64_uart_tx_buf) - 1),
+            //    pc64_uart_tx_buf");
+            printf("TX\n");
             break;
           case PC64_REGISTER_RAND_SEED:
             pc64_rand_seed(write_word);
