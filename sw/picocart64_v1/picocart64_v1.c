@@ -70,38 +70,6 @@ void cic_task_entry(__unused void *params) {
   n64_cic_task(sram_save_to_flash);
 }
 
-#if 0
-static void second_task_entry(__unused void *params)
-{
-	uint32_t count = 0;
-
-	printf("second_task_entry\n");
-
-	while (true) {
-		vTaskDelay(1000);
-		count++;
-
-		// Set to 1 to print stack watermarks.
-		// Printing is synchronous and interferes with the CIC emulation.
-#if 0
-		// printf("Second task heartbeat: %d\n", count);
-		// vPortYield();
-
-		if (count > 10) {
-			printf("watermark: %d\n", uxTaskGetStackHighWaterMark(NULL));
-			vPortYield();
-
-			printf("watermark second_task: %d\n", uxTaskGetStackHighWaterMark((TaskHandle_t) & second_task));
-			vPortYield();
-
-			printf("watermark cic_task: %d\n", uxTaskGetStackHighWaterMark((TaskHandle_t) & cic_task));
-			vPortYield();
-		}
-#endif
-
-	}
-}
-#endif
 
 #define USB_TASK_STACK_SIZE configMINIMAL_STACK_SIZE
 #define USB_TASK_PRIORITY (tskIDLE_PRIORITY + 1)
@@ -138,6 +106,8 @@ StackType_t outgoing_usb_task_stack[USB_TASK_STACK_SIZE];
 void outgoing_usb_task_entry(void *pvParameters) {
 
   uint32_t lastSentData = 0;
+  uint32_t debugSentData = 0;
+  uint32_t crashDebugSentData = 0;
 
   while (true) {
     // Wait until USB is connected
@@ -149,21 +119,26 @@ void outgoing_usb_task_entry(void *pvParameters) {
       printf("MARIO: 0x%08X.\n", outgoing_usb_store_word);
       lastSentData = outgoing_usb_store_word;
     }
+
+    if (debugSentData != alt_usb_debug_word) {
+      printf("D: 0x%08X.\n", alt_usb_debug_word);
+      debugSentData = alt_usb_debug_word;
+    }
+
+    if (crashDebugSentData != crash_alt_usb_debug_word) {
+      printf("CR: 0x%08X.\n", crash_alt_usb_debug_word);
+      crashDebugSentData = crash_alt_usb_debug_word;
+    }
       // Yield to other tasks
       vTaskDelay(pdMS_TO_TICKS(10));
   }
-
-
 }
-
 
 void vLaunch(void) {
   xTaskCreateStatic(cic_task_entry, "CICThread", configMINIMAL_STACK_SIZE, NULL,
                     CIC_TASK_PRIORITY, cic_task_stack, &cic_task);
-  // xTaskCreateStatic(second_task_entry, "SecondThread",
-  // configMINIMAL_STACK_SIZE, NULL, SECOND_TASK_PRIORITY, second_task_stack,
-  // &second_task);
 
+  stdio_init_all();
   xTaskCreateStatic(incoming_usb_task_entry, "IncomingUSBThread",
                     USB_TASK_STACK_SIZE, NULL, USB_TASK_PRIORITY,
                     incoming_usb_task_stack, &incoming_usb_task);
@@ -201,7 +176,6 @@ int main(void) {
   // make sure to overclock BEFORE setting up USB init or you'll have a bad time
   set_sys_clock_khz(CONFIG_CPU_FREQ_MHZ * 1000, true);
 
-  stdio_init_all();
 
   // Init GPIOs before starting the second core and FreeRTOS
   for (int i = 0; i <= 27; i++) {

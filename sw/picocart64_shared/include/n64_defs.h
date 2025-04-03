@@ -22,6 +22,8 @@
 #define CART_SRAM_START           CART_DOM2_ADDR2_START
 #define CART_SRAM_END             (CART_DOM2_ADDR2_START + 0x100000 - 1)
 
+//#define OUTGOING_USB (CART_SRAM_END + 1)
+
 // Cartridge ROM
 #define CART_DOM1_ADDR2_START     0x10000000
 #define CART_DOM1_ADDR2_END       0x1FBFFFFF

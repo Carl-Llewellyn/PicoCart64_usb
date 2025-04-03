@@ -69,14 +69,16 @@ void n64_pi_run(void) {
     tight_loop_contents();
   }
 
-  uint32_t last_addr;
   uint32_t addr;
   uint32_t next_word;
-
+  uint32_t last_addr;
   // Read addr manually before the loop
   addr = n64_pi_get_value(pio);
 
-  printf("PI_RUN\n");
+  
+  //unit32_t tmp_word_store;
+
+  alt_usb_debug_word = 1;
 
   while (1) {
     // addr must not be a WRITE or READ request here,
@@ -86,11 +88,7 @@ void n64_pi_run(void) {
 
     // We got a start address
     last_addr = addr;
-    // printf("ADDR: = 0x%08X.\n", last_addr);
 
-    // if (last_addr ==  0xBFBF1200 || last_addr == 0x1FBF1200){
-    //    printf("FOUND ADDr: 0x%08X.\n", last_addr);
-    //   }
     // Handle access based on memory region
     // Note that the if-cases are ordered in priority from
     // most timing critical to least.
@@ -152,8 +150,6 @@ void n64_pi_run(void) {
           last_addr += 2;
         } else if ((addr & 0xffff0000) == 0xffff0000) {
           // WRITE
-          // printf("Rw\n");
-          //printf("ROM WRITE: ADDR: = 0x%08X.\n", last_addr);
           // Ignore data since we're asked to write to the ROM.
           last_addr += 2;
         } else {
@@ -162,44 +158,37 @@ void n64_pi_run(void) {
         }
       } while (1);
     } else if (last_addr >= CART_SRAM_START && last_addr <= CART_SRAM_END) {
-      // Domain 2, Address 2 Cartridge SRAM
-      // Calculate start pointer
-      uint16_t *sram_ptr = &sram[sram_resolve_address_shifted(last_addr)];
-      do {
-        // Read command/address
-        addr = n64_pi_get_value(pio);
+			// Domain 2, Address 2 Cartridge SRAM
 
-        if ((addr & 0xffff0000) == 0xffff0000) {
-         // printf("SRAM READ9: ADDR: = 0x%08X.\n", last_addr);
+			// Calculate start pointer
+			uint16_t *sram_ptr = &sram[sram_resolve_address_shifted(last_addr)];
+      uint32_t addr2 = 0;
+			do {
+				// Read command/address
+				addr = n64_pi_get_value(pio);
 
-            // WRITE
-          *(sram_ptr++) = addr & 0xFFFF;
-          
-          // More readable:
-          // sram[sram_resolve_address_shifted(last_addr)] = addr & 0xFFFF;
-          // last_addr += 2;
-        } else if (addr == 0) {
-          //printf("SRAM READ0: ADDR: = 0x%08X.\n", last_addr);
-          outgoing_usb_store_word = 1;
-          // READ
-          pio_sm_put(pio, 0, *(sram_ptr++));
-
-          // More readable:
-          // next_word = sram[sram_resolve_address_shifted(last_addr)];
-          // pio_sm_put(pio, 0, next_word);
-          // last_addr += 2;
-        } else {
-         // printf("SRAM READ1: ADDR: = 0x%08X.\n", last_addr);
-          if (last_addr == CART_SRAM_START) {
-            outgoing_usb_store_word =  addr & 0xFFFF;
-          }
-          // New address
+				if ((addr & 0xffff0000) == 0xffff0000) {//write
+					addr2 = addr;
+          addr = n64_pi_get_value(pio); //get the second half of the address
+          outgoing_usb_store_word = ((addr2 & 0xFFFF) << 16) | (addr & 0xFFFF);//get full word
+          alt_usb_debug_word = last_addr+1;//debug out
+          addr = n64_pi_get_value(pio);//get the next address for the upper loop
           break;
-        }
-      } while (1);
+				} else if (addr == 0) {
+					// READ
+					pio_sm_put(pio, 0, *(sram_ptr++));
+          alt_usb_debug_word = last_addr+2;
+					// More readable:
+					// next_word = sram[sram_resolve_address_shifted(last_addr)];
+					// pio_sm_put(pio, 0, next_word);
+					// last_addr += 2;
+				} else {
+					// New address
+					break;
+				}
+			} while (1);
     } else if (last_addr >= PC64_BASE_ADDRESS_START &&
                last_addr <= PC64_BASE_ADDRESS_END) {
-      printf("B\n");
       // PicoCart64 BASE address space
       do {
         // Pre-fetch from the address
@@ -229,7 +218,6 @@ void n64_pi_run(void) {
       } while (1);
     } else if (last_addr >= PC64_RAND_ADDRESS_START &&
                last_addr <= PC64_RAND_ADDRESS_END) {
-      printf("RAND\n");
 
       // PicoCart64 RAND address space
       do {
@@ -252,7 +240,6 @@ void n64_pi_run(void) {
     } else if (last_addr >= PC64_CIBASE_ADDRESS_START &&
                last_addr <= PC64_CIBASE_ADDRESS_END) {
       // PicoCart64 CIBASE address space
-      printf("CI\n");
 
       do {
         // Read command/address
@@ -290,7 +277,6 @@ void n64_pi_run(void) {
           last_addr += 2;
         } else if ((addr & 0xffff0000) == 0xffff0000) {
           // WRITE
-          printf("WR\n");
 
           // Read two 16-bit half-words and merge them to a 32-bit value
           uint32_t write_word = addr << 16;
@@ -302,7 +288,6 @@ void n64_pi_run(void) {
             // & (sizeof(pc64_uart_tx_buf) - 1));
             //  printf(""%.*s", write_word & (sizeof(pc64_uart_tx_buf) - 1),
             //    pc64_uart_tx_buf");
-            printf("TX\n");
             break;
           case PC64_REGISTER_RAND_SEED:
             pc64_rand_seed(write_word);
@@ -322,10 +307,7 @@ void n64_pi_run(void) {
       // This way, there won't be a bus conflict in case e.g. a physical N64DD
       // is connected.
 
-      // Enable to log addresses to UART
-#if 0
-			uart_print_hex_u32(last_addr);
-#endif
+        crash_alt_usb_debug_word = last_addr;
 
       // Read to empty fifo
       addr = n64_pi_get_value(pio);
