@@ -16,9 +16,6 @@ extern uint32_t usb_bytes_received;
 extern _Atomic uint32_t incoming_usb_store_word;
 extern _Atomic uint32_t outgoing_usb_store_word;
 
-// Function to initialize the mutex.
-void initMutex(void);
-
 /// @brief Macro to get the size of an array
 #define ARRAY_SIZE(x) (sizeof(x)/sizeof(x[0]))
 

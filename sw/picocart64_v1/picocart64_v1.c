@@ -106,23 +106,16 @@ static void second_task_entry(__unused void *params)
 #define USB_TASK_STACK_SIZE configMINIMAL_STACK_SIZE
 #define USB_TASK_PRIORITY (tskIDLE_PRIORITY + 1)
 
-// Static allocation for USB task
+
 StaticTask_t incoming_usb_task;
 StackType_t incoming_usb_task_stack[USB_TASK_STACK_SIZE];
-
-
-
-uint32_t swap_endianness(uint32_t value) {
-  return ((value >> 24) & 0x000000FF) | ((value >> 8) & 0x0000FF00) |
-         ((value << 8) & 0x00FF0000) | ((value << 24) & 0xFF000000);
-}
 
 void incoming_usb_task_entry(void *pvParameters) {
 
   while (true) {
     // Wait until USB is connected
     while (!tud_cdc_connected()) {
-      vTaskDelay(pdMS_TO_TICKS(100));
+      vTaskDelay(pdMS_TO_TICKS(1000));
     }
 
     // Check for available data
@@ -132,15 +125,16 @@ void incoming_usb_task_entry(void *pvParameters) {
         incoming_usb_store_word = __builtin_bswap32(*(uint32_t *)usb_buffer);
       }
     }
+      // Yield to other tasks
+      vTaskDelay(pdMS_TO_TICKS(10));
   }
 
-  // Yield to other tasks
-  vTaskDelay(pdMS_TO_TICKS(10));
 }
 
 
 StaticTask_t outgoing_usb_task;
 StackType_t outgoing_usb_task_stack[USB_TASK_STACK_SIZE];
+
 void outgoing_usb_task_entry(void *pvParameters) {
 
   uint32_t lastSentData = 0;
@@ -148,17 +142,18 @@ void outgoing_usb_task_entry(void *pvParameters) {
   while (true) {
     // Wait until USB is connected
     while (!tud_cdc_connected()) {
-      vTaskDelay(pdMS_TO_TICKS(100));
+      vTaskDelay(pdMS_TO_TICKS(1000));
     }
 
     if (lastSentData != outgoing_usb_store_word) {
       printf("MARIO: 0x%08X.\n", outgoing_usb_store_word);
       lastSentData = outgoing_usb_store_word;
     }
+      // Yield to other tasks
+      vTaskDelay(pdMS_TO_TICKS(10));
   }
 
-  // Yield to other tasks
-  vTaskDelay(pdMS_TO_TICKS(10));
+
 }
 
 
@@ -172,11 +167,11 @@ void vLaunch(void) {
   xTaskCreateStatic(incoming_usb_task_entry, "IncomingUSBThread",
                     USB_TASK_STACK_SIZE, NULL, USB_TASK_PRIORITY,
                     incoming_usb_task_stack, &incoming_usb_task);
-/*
+
   xTaskCreateStatic(outgoing_usb_task_entry, "OutgoingUSBThread",
                     USB_TASK_STACK_SIZE, NULL, USB_TASK_PRIORITY,
                     outgoing_usb_task_stack, &outgoing_usb_task);
-*/
+
   /* Start the tasks and timer running. */
   vTaskStartScheduler();
 }

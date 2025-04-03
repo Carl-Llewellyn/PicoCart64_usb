@@ -153,7 +153,7 @@ void n64_pi_run(void) {
         } else if ((addr & 0xffff0000) == 0xffff0000) {
           // WRITE
           // printf("Rw\n");
-          printf("ROM WRITE: ADDR: = 0x%08X.\n", last_addr);
+          //printf("ROM WRITE: ADDR: = 0x%08X.\n", last_addr);
           // Ignore data since we're asked to write to the ROM.
           last_addr += 2;
         } else {
@@ -170,16 +170,17 @@ void n64_pi_run(void) {
         addr = n64_pi_get_value(pio);
 
         if ((addr & 0xffff0000) == 0xffff0000) {
-          if (last_addr == CART_SRAM_START) {
-            outgoing_usb_store_word =  addr & 0xFFFF;
-          } else {
+         // printf("SRAM READ9: ADDR: = 0x%08X.\n", last_addr);
+
             // WRITE
-            *(sram_ptr++) = addr & 0xFFFF;
-          }
+          *(sram_ptr++) = addr & 0xFFFF;
+          
           // More readable:
           // sram[sram_resolve_address_shifted(last_addr)] = addr & 0xFFFF;
           // last_addr += 2;
         } else if (addr == 0) {
+          //printf("SRAM READ0: ADDR: = 0x%08X.\n", last_addr);
+          outgoing_usb_store_word = 1;
           // READ
           pio_sm_put(pio, 0, *(sram_ptr++));
 
@@ -188,6 +189,10 @@ void n64_pi_run(void) {
           // pio_sm_put(pio, 0, next_word);
           // last_addr += 2;
         } else {
+         // printf("SRAM READ1: ADDR: = 0x%08X.\n", last_addr);
+          if (last_addr == CART_SRAM_START) {
+            outgoing_usb_store_word =  addr & 0xFFFF;
+          }
           // New address
           break;
         }
