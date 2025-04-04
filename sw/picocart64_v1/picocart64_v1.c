@@ -105,7 +105,9 @@ StackType_t outgoing_usb_task_stack[USB_TASK_STACK_SIZE];
 
 void outgoing_usb_task_entry(void *pvParameters) {
 
-  uint32_t lastSentData = 0;
+  uint32_t lastXSentData = 0;
+  uint32_t lastYSentData = 0;
+  uint32_t lastZSentData = 0;
   uint32_t debugSentData = 0;
   uint32_t crashDebugSentData = 0;
 
@@ -115,9 +117,12 @@ void outgoing_usb_task_entry(void *pvParameters) {
       vTaskDelay(pdMS_TO_TICKS(1000));
     }
 
-    if (lastSentData != outgoing_usb_store_word) {
-      printf("MARIO: 0x%08X.\n", outgoing_usb_store_word);
-      lastSentData = outgoing_usb_store_word;
+    if (lastXSentData != outgoing_usb_x_word || lastYSentData != outgoing_usb_y_word || lastZSentData != outgoing_usb_z_word) {
+     // printf("X: %f, Y: %f, Z: %f\n", ((float*)&outgoing_usb_x_word), ((float*)&outgoing_usb_y_word), ((float*)&outgoing_usb_z_word));//bitwise representation of a f32 in u32
+      printf("X:  0x%08X, Y:  0x%08X, Z:  0x%08X\n", outgoing_usb_x_word, outgoing_usb_y_word, outgoing_usb_z_word);
+      lastXSentData = outgoing_usb_x_word;
+      lastYSentData = outgoing_usb_y_word;
+      lastZSentData = outgoing_usb_z_word;
     }
 
     if (debugSentData != alt_usb_debug_word) {
