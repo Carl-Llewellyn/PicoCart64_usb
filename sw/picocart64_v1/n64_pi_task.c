@@ -186,33 +186,7 @@ void n64_pi_run(void) {
              addr = n64_pi_get_value(pio);
              break;
            }
-         // n64_pi_get_value(pio);//skip address that is just the next write address
-         // outgoing_usb_y_word = ((n64_pi_get_value(pio) & 0xFFFF) << 16) | (n64_pi_get_value(pio) & 0xFFFF);
-        //  n64_pi_get_value(pio);//skip address that is just the next write address
-         // outgoing_usb_z_word = ((n64_pi_get_value(pio) & 0xFFFF) << 16) | (n64_pi_get_value(pio) & 0xFFFF);
-
-       
-    /*     switch(n64_pi_get_value(pio) & 0xFFFF){//second half of header
-            case 0x1111://x header
-              n64_pi_get_value(pio);//skip address for write command
-              outgoing_usb_x_word = ((n64_pi_get_value(pio) & 0xFFFF) << 16) | (n64_pi_get_value(pio) & 0xFFFF);//get full word
-              alt_usb_debug_word = last_addr+10;
-            break;
-            case 0x2222://y header
-              n64_pi_get_value(pio);//skip address for write command
-              outgoing_usb_x_word = ((n64_pi_get_value(pio) & 0xFFFF) << 16) | (n64_pi_get_value(pio) & 0xFFFF);//get full word
-              alt_usb_debug_word = last_addr+11;
-            break;
-            case 0x3333://z header
-              n64_pi_get_value(pio);//skip address for write command
-              outgoing_usb_x_word = ((n64_pi_get_value(pio) & 0xFFFF) << 16) | (n64_pi_get_value(pio) & 0xFFFF);//get full word
-              alt_usb_debug_word = last_addr+12;
-            break;
-            default:
-              alt_usb_debug_word = last_addr+13;
-            break;
-         }*/
-
+           
          alt_usb_debug_word = last_addr+currUsbVal;//debug out
 				} else if (addr == 0) {
 					// READ

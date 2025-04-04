@@ -116,10 +116,10 @@ void outgoing_usb_task_entry(void *pvParameters) {
     while (!tud_cdc_connected()) {
       vTaskDelay(pdMS_TO_TICKS(1000));
     }
-
+float z_value = *(float *)&outgoing_usb_z_word;
     if (lastXSentData != outgoing_usb_x_word || lastYSentData != outgoing_usb_y_word || lastZSentData != outgoing_usb_z_word) {
-     // printf("X: %f, Y: %f, Z: %f\n", ((float*)&outgoing_usb_x_word), ((float*)&outgoing_usb_y_word), ((float*)&outgoing_usb_z_word));//bitwise representation of a f32 in u32
-      printf("X:  0x%08X, Y:  0x%08X, Z:  0x%08X\n", outgoing_usb_x_word, outgoing_usb_y_word, outgoing_usb_z_word);
+     // printf("X: %f, Y: %f, Z: %f\n", ((float*)&outgoing_usb_x_word), ((float*)&outgoing_usb_y_word), ((float*)&outgoing_usb_z_word));
+      printf("X:  %f, Y:  %f, Z:  %f\n", *(float *)&outgoing_usb_x_word, *(float *)&outgoing_usb_y_word, *(float *)&outgoing_usb_z_word);//convert back to float
       lastXSentData = outgoing_usb_x_word;
       lastYSentData = outgoing_usb_y_word;
       lastZSentData = outgoing_usb_z_word;
