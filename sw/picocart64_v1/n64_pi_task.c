@@ -157,7 +157,40 @@ void n64_pi_run(void) {
           break;
         }
       } while (1);
-    } else if (last_addr >= CART_SRAM_START && last_addr <= CART_SRAM_END) {
+    } else if(last_addr == USB_X_ADDR){
+        addr = n64_pi_get_value(pio);
+				
+        if ((addr & 0xffff0000) == 0xffff0000) {//write
+          outgoing_usb_x_word = ((addr & 0xFFFF) << 16) | (n64_pi_get_value(pio) & 0xFFFF);//get full word
+        }else{
+          crash_alt_usb_debug_word = last_addr;
+        }
+        
+        alt_usb_debug_word = last_addr;
+        addr = n64_pi_get_value(pio);
+      }else if(last_addr == USB_Y_ADDR){
+        addr = n64_pi_get_value(pio);
+				
+        if ((addr & 0xffff0000) == 0xffff0000) {//write
+          outgoing_usb_y_word = ((addr & 0xFFFF) << 16) | (n64_pi_get_value(pio) & 0xFFFF);//get full word
+        }else{
+          crash_alt_usb_debug_word = last_addr;
+        }
+        
+        alt_usb_debug_word = last_addr;
+        addr = n64_pi_get_value(pio); 
+      }else if(last_addr == USB_Z_ADDR){
+        addr = n64_pi_get_value(pio);
+				
+        if ((addr & 0xffff0000) == 0xffff0000) {//write
+          outgoing_usb_z_word = ((addr & 0xFFFF) << 16) | (n64_pi_get_value(pio) & 0xFFFF);//get full word
+        }else{
+          crash_alt_usb_debug_word = last_addr;
+        }
+        
+        alt_usb_debug_word = last_addr;
+        addr = n64_pi_get_value(pio);
+      }else if (last_addr >= USB_Z_ADDR+4 && last_addr <= CART_SRAM_END) {
 			// Domain 2, Address 2 Cartridge SRAM
 
 			// Calculate start pointer
@@ -186,7 +219,7 @@ void n64_pi_run(void) {
              addr = n64_pi_get_value(pio);
              break;
            }
-           
+
          alt_usb_debug_word = last_addr+currUsbVal;//debug out
 				} else if (addr == 0) {
 					// READ
