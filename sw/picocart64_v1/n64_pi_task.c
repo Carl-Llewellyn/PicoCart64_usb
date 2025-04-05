@@ -190,6 +190,39 @@ void n64_pi_run(void) {
         
         alt_usb_debug_word = last_addr;
         addr = n64_pi_get_value(pio);
+      }else if(last_addr == READ_USB_X_ADDR){
+        addr = n64_pi_get_value(pio);
+				
+        if ((addr & 0xffff0000) == 0xffff0000) {//write
+          crash_alt_usb_debug_word = last_addr;  
+        }else{//read
+              pio_sm_put(pio, 0, incoming_usb_x_word >> 16);
+        }
+        
+        alt_usb_debug_word = last_addr;
+        addr = n64_pi_get_value(pio);
+      }else if(last_addr == READ_USB_Y_ADDR){
+        addr = n64_pi_get_value(pio);
+				
+        if ((addr & 0xffff0000) == 0xffff0000) {//write
+          crash_alt_usb_debug_word = last_addr;  
+        }else{//read
+              pio_sm_put(pio, 0, incoming_usb_y_word >> 16);
+        }
+        
+        alt_usb_debug_word = last_addr;
+        addr = n64_pi_get_value(pio);
+      }else if(last_addr == READ_USB_Z_ADDR){
+        addr = n64_pi_get_value(pio);
+				
+        if ((addr & 0xffff0000) == 0xffff0000) {//write
+          crash_alt_usb_debug_word = last_addr;  
+        }else{//read    
+              pio_sm_put(pio, 0, incoming_usb_z_word >> 16);
+        }
+        
+        alt_usb_debug_word = last_addr;
+        addr = n64_pi_get_value(pio);
       }else if (last_addr >= USB_Z_ADDR+4 && last_addr <= CART_SRAM_END) {
 			// Domain 2, Address 2 Cartridge SRAM
 

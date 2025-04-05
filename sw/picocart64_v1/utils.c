@@ -22,6 +22,9 @@ _Atomic uint32_t outgoing_usb_z_word = 0;
 _Atomic uint32_t alt_usb_debug_word = 0;
 _Atomic uint32_t crash_alt_usb_debug_word = 0;
 
+_Atomic uint32_t incoming_usb_x_word = 20;
+_Atomic uint32_t incoming_usb_y_word = 30;
+_Atomic uint32_t incoming_usb_z_word = 40;
 
 void assert_handler(char *file, int line, char *statement)
 {

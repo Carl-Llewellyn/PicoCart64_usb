@@ -45,3 +45,7 @@
 #define USB_X_ADDR CART_SRAM_START
 #define USB_Y_ADDR (USB_X_ADDR + 4)
 #define USB_Z_ADDR (USB_Y_ADDR + 4)
+
+#define READ_USB_X_ADDR (USB_Z_ADDR + 4)
+#define READ_USB_Y_ADDR (READ_USB_X_ADDR + 4)
+#define READ_USB_Z_ADDR (READ_USB_Y_ADDR + 4)
