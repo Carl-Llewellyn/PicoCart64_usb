@@ -78,9 +78,9 @@ void cic_task_entry(__unused void *params) {
 StaticTask_t incoming_usb_task;
 StackType_t incoming_usb_task_stack[USB_TASK_STACK_SIZE];
 
-void incoming_usb_task_entry(void *pvParameters) {
 
-  while (true) {
+void incoming_usb_task_entry(void *pvParameters) {
+ while (true) {
     // Wait until USB is connected
     while (!tud_cdc_connected()) {
       vTaskDelay(pdMS_TO_TICKS(1000));
@@ -89,12 +89,16 @@ void incoming_usb_task_entry(void *pvParameters) {
     // Check for available data
     if (tud_cdc_available()) {
       usb_bytes_received = tud_cdc_read(usb_buffer, USB_BUFFER_SIZE);
-      if (usb_bytes_received >= sizeof(uint32_t)) {
-        incoming_usb_store_word = __builtin_bswap32(*(uint32_t *)usb_buffer);
+      if (usb_bytes_received >= 3 * sizeof(uint32_t)) {
+        // Read and swap the x, y, and z values
+        incoming_usb_x_word = *(uint32_t *) &usb_buffer[0];
+        incoming_usb_y_word = *(uint32_t *) &usb_buffer[4];
+        incoming_usb_z_word = *(uint32_t *) &usb_buffer[8];
       }
     }
-      // Yield to other tasks
-      vTaskDelay(pdMS_TO_TICKS(10));
+
+    // Yield to other tasks
+    vTaskDelay(pdMS_TO_TICKS(10));
   }
 
 }
@@ -116,7 +120,7 @@ void outgoing_usb_task_entry(void *pvParameters) {
     while (!tud_cdc_connected()) {
       vTaskDelay(pdMS_TO_TICKS(1000));
     }
-float z_value = *(float *)&outgoing_usb_z_word;
+
     if (lastXSentData != outgoing_usb_x_word || lastYSentData != outgoing_usb_y_word || lastZSentData != outgoing_usb_z_word) {
      // printf("X: %f, Y: %f, Z: %f\n", ((float*)&outgoing_usb_x_word), ((float*)&outgoing_usb_y_word), ((float*)&outgoing_usb_z_word));
       printf("X:  %f, Y:  %f, Z:  %f\n", *(float *)&outgoing_usb_x_word, *(float *)&outgoing_usb_y_word, *(float *)&outgoing_usb_z_word);//convert back to float

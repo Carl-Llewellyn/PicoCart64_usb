@@ -190,13 +190,23 @@ void n64_pi_run(void) {
         
         alt_usb_debug_word = last_addr;
         addr = n64_pi_get_value(pio);
+      //------------------------------------------------------------------------------------------------------------------------------------
+      //---START POS READS USB -------------------------------------------------------------------------------------------------------------
+      //------------------------------------------------------------------------------------------------------------------------------------
       }else if(last_addr == READ_USB_X_ADDR){
         addr = n64_pi_get_value(pio);
 				
         if ((addr & 0xffff0000) == 0xffff0000) {//write
           crash_alt_usb_debug_word = last_addr;  
         }else{//read
-              pio_sm_put(pio, 0, incoming_usb_x_word >> 16);
+          // Send the higher 16 bits first
+          pio_sm_put(pio, 0, (incoming_usb_x_word >> 16));
+          addr = n64_pi_get_value(pio);
+          if (addr != 0) {
+            crash_alt_usb_debug_word = last_addr;  
+          }else{
+            pio_sm_put(pio, 0, incoming_usb_x_word & 0xFFFF);
+          }
         }
         
         alt_usb_debug_word = last_addr;
@@ -207,7 +217,10 @@ void n64_pi_run(void) {
         if ((addr & 0xffff0000) == 0xffff0000) {//write
           crash_alt_usb_debug_word = last_addr;  
         }else{//read
-              pio_sm_put(pio, 0, incoming_usb_y_word >> 16);
+          // Send the higher 16 bits first
+          pio_sm_put(pio, 0, (incoming_usb_y_word >> 16));
+          addr = n64_pi_get_value(pio);
+          pio_sm_put(pio, 0, incoming_usb_y_word & 0xFFFF);
         }
         
         alt_usb_debug_word = last_addr;
@@ -218,7 +231,10 @@ void n64_pi_run(void) {
         if ((addr & 0xffff0000) == 0xffff0000) {//write
           crash_alt_usb_debug_word = last_addr;  
         }else{//read    
-              pio_sm_put(pio, 0, incoming_usb_z_word >> 16);
+          // Send the higher 16 bits first
+          pio_sm_put(pio, 0, (incoming_usb_z_word >> 16));
+          addr = n64_pi_get_value(pio);
+          pio_sm_put(pio, 0, incoming_usb_z_word & 0xFFFF);
         }
         
         alt_usb_debug_word = last_addr;
@@ -387,7 +403,7 @@ void n64_pi_run(void) {
       // This way, there won't be a bus conflict in case e.g. a physical N64DD
       // is connected.
 
-        crash_alt_usb_debug_word = last_addr;
+      crash_alt_usb_debug_word = last_addr;
 
       // Read to empty fifo
       addr = n64_pi_get_value(pio);
