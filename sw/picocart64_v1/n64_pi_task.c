@@ -81,6 +81,7 @@ void n64_pi_run(void) {
   alt_usb_debug_word = 1;
 
   while (1) {
+    currUsbVal = 0;
     // addr must not be a WRITE or READ request here,
     // it should contain a 16-bit aligned address.
     // Assert drains performance, uncomment when debugging.
