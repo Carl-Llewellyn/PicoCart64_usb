@@ -117,3 +117,19 @@ build/
 git_info.h
 
 *.bak
+
+# PicoCart64 sw build outputs
+sw/_deps/
+sw/FreeRTOS-Kernel/
+sw/pico-sdk/
+sw/pioasm/
+sw/pioasm-install/
+sw/picocart64_v1/picotool/
+sw/generated/
+sw/**/CMakeFiles/
+sw/**/CMakeCache.txt
+sw/**/cmake_install.cmake
+sw/**/Makefile
+sw/**/compile_commands.json
+sw/**/.ninja_*
+sw/**/build.ninja

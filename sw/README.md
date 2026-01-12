@@ -37,3 +37,35 @@ openocd -f interface/jlink.cfg -c "transport select swd; adapter_khz 1000" -f ta
 # Alternatively, attach a debugger, `mon reset halt`, `c`, does the trick as well. It seems that openocd's `reset run` doesn't work properly.
 
 ```
+
+## Docker (Ubuntu 24.04, Oct 2024-era toolchain)
+
+This uses a pinned Pico SDK inside the container and expects FreeRTOS under `lib/freertos-kernel`.
+
+Build the image (override `PICO_SDK_REF` if desired):
+
+```bash
+cd sw
+PICO_SDK_REF=2.1.1 ./docker/build-image.sh
+```
+
+Clean build with a ROM path (override `REGION`, `FLASH_SIZE_MB`, `JOBS` as needed):
+
+```bash
+cd sw
+./docker/clean-build.sh ~/Downloads/testrom.z64
+```
+
+Normal build (reuses existing `build/`):
+
+```bash
+cd sw
+./docker/build.sh
+```
+
+If `lib/freertos-kernel` is missing, the clean build script will initialize it. To force a specific tag:
+
+```bash
+cd sw
+FREERTOS_KERNEL_REF=V11.1.0 FORCE_FREERTOS_REF=1 ./docker/clean-build.sh ~/Downloads/testrom.z64
+```

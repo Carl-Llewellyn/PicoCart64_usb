@@ -32,6 +32,12 @@
 
 uint16_t rom_mapping[MAPPING_TABLE_LEN];
 
+volatile uint32_t usb_rx_words[USB_COMM_WORDS];
+volatile uint32_t usb_rx_seq = 0;
+
+volatile uint32_t usb_tx_words_buf[2][USB_COMM_WORDS];
+volatile uint32_t usb_tx_seq = 0;
+
 #if COMPRESSED_ROM
 // do something
 #else
@@ -43,13 +49,29 @@ RINGBUF_CREATE(ringbuf, 64, uint32_t);
 // UART TX buffer
 static uint16_t pc64_uart_tx_buf[PC64_BASE_ADDRESS_LENGTH];
 
+#ifndef USB_COMM_BASE
+#define USB_COMM_BASE CART_SRAM_START
+#endif
+
+#ifndef USB_COMM_BYTES
+#define USB_COMM_BYTES 24u
+#endif
+
+#ifndef USB_COMM_END
+#define USB_COMM_END (USB_COMM_BASE + USB_COMM_BYTES - 1u)
+#endif
+
+static inline uint32_t usb_full_mask(void) {
+  return (USB_COMM_WORDS >= 32) ? 0xFFFFFFFFu : ((1u << USB_COMM_WORDS) - 1u);
+}
+
 static inline uint32_t n64_pi_get_value(PIO pio) {
   uint32_t value = pio_sm_get_blocking(pio, 0);
 
   // Disable to get some more performance. Enable for debugging.
   // Without ringbuf, ROM access takes 160-180ns. With, 240-260ns.
 #if 0
-	ringbuf_add(ringbuf, value);
+  ringbuf_add(ringbuf, value);
 #elif 0
   uart_print_hex_u32(value);
 #endif
@@ -64,6 +86,8 @@ void n64_pi_run(void) {
   n64_pi_program_init(pio, 0, offset);
   pio_sm_set_enabled(pio, 0, true);
 
+  uint32_t usb_mask = 0;
+
   // Wait for reset to be released
   while (gpio_get(N64_COLD_RESET) == 0) {
     tight_loop_contents();
@@ -72,21 +96,11 @@ void n64_pi_run(void) {
   uint32_t addr;
   uint32_t next_word;
   uint32_t last_addr;
+
   // Read addr manually before the loop
   addr = n64_pi_get_value(pio);
 
-  int currUsbVal = 0;
-  //unit32_t tmp_word_store;
-
-  alt_usb_debug_word = 1;
-
   while (1) {
-    currUsbVal = 0;
-    // addr must not be a WRITE or READ request here,
-    // it should contain a 16-bit aligned address.
-    // Assert drains performance, uncomment when debugging.
-    // ASSERT((addr != 0) && ((addr & 1) == 0));
-
     // We got a start address
     last_addr = addr;
 
@@ -158,132 +172,86 @@ void n64_pi_run(void) {
           break;
         }
       } while (1);
-    } else if(last_addr == USB_X_ADDR){
-        addr = n64_pi_get_value(pio);
-				
-        if ((addr & 0xffff0000) == 0xffff0000) {//write
-          outgoing_usb_x_word = ((addr & 0xFFFF) << 16) | (n64_pi_get_value(pio) & 0xFFFF);//get full word
-        }else{
-          crash_alt_usb_debug_word = last_addr;
+
+    } else if (last_addr >= CART_SRAM_START && last_addr <= CART_SRAM_END) {
+
+      //intercept our comm window
+      if (last_addr >= USB_COMM_BASE && last_addr <= USB_COMM_END) {
+
+        //reset packet mask when a new stream starts at the base
+        if (last_addr == USB_COMM_BASE) {
+          usb_mask = 0;
         }
-        
-        alt_usb_debug_word = last_addr;
-        addr = n64_pi_get_value(pio);
-      }else if(last_addr == USB_Y_ADDR){
-        addr = n64_pi_get_value(pio);
-				
-        if ((addr & 0xffff0000) == 0xffff0000) {//write
-          outgoing_usb_y_word = ((addr & 0xFFFF) << 16) | (n64_pi_get_value(pio) & 0xFFFF);//get full word
-        }else{
-          crash_alt_usb_debug_word = last_addr;
-        }
-        
-        alt_usb_debug_word = last_addr;
-        addr = n64_pi_get_value(pio); 
-      }else if(last_addr == USB_Z_ADDR){
-        addr = n64_pi_get_value(pio);
-				
-        if ((addr & 0xffff0000) == 0xffff0000) {//write
-          outgoing_usb_z_word = ((addr & 0xFFFF) << 16) | (n64_pi_get_value(pio) & 0xFFFF);//get full word
-        }else{
-          crash_alt_usb_debug_word = last_addr;
-        }
-        
-        alt_usb_debug_word = last_addr;
-        addr = n64_pi_get_value(pio);
-      //------------------------------------------------------------------------------------------------------------------------------------
-      //---START POS READS USB -------------------------------------------------------------------------------------------------------------
-      //------------------------------------------------------------------------------------------------------------------------------------
-      }else if(last_addr == READ_USB_X_ADDR){
-        addr = n64_pi_get_value(pio);
-				
-        if ((addr & 0xffff0000) == 0xffff0000) {//write
-          crash_alt_usb_debug_word = last_addr;  
-        }else{//read
-          // Send the higher 16 bits first
-          pio_sm_put(pio, 0, (incoming_usb_x_word >> 16));
+
+        do {
           addr = n64_pi_get_value(pio);
-          if (addr != 0) {
-            crash_alt_usb_debug_word = last_addr;  
-          }else{
-            pio_sm_put(pio, 0, incoming_usb_x_word & 0xFFFF);
+
+          if (addr == 0) {
+            //read: return 16-bit halfwords from current tx buffer
+            uint32_t off_hw = (last_addr - USB_COMM_BASE) >> 1; //halfword index
+            uint32_t wi     = off_hw >> 1;                      //word index
+            uint32_t hi     = ((off_hw & 1u) == 0u);            //even => high16
+
+            uint16_t out = 0;
+            uint32_t txi = usb_tx_seq & 1u; //active buffer index
+
+            if (wi < USB_COMM_WORDS) {
+              uint32_t w = usb_tx_words_buf[txi][wi];
+              out = hi ? (uint16_t)(w >> 16) : (uint16_t)(w & 0xFFFFu);
+            }
+
+            pio_sm_put(pio, 0, out);
+            last_addr += 2;
+
+          } else if ((addr & 0xFFFF0000u) == 0xFFFF0000u) {
+            //write: n64 writes a 32-bit word as two 16-bit writes
+            uint16_t hi16 = (uint16_t)(addr & 0xFFFFu);
+            uint16_t lo16 = (uint16_t)(n64_pi_get_value(pio) & 0xFFFFu);
+            uint32_t w    = ((uint32_t)hi16 << 16) | (uint32_t)lo16;
+
+            uint32_t wi = (last_addr - USB_COMM_BASE) >> 2; //word index 0..(USB_COMM_WORDS-1)
+
+            if (wi < USB_COMM_WORDS) {
+              usb_rx_words[wi] = w;
+              usb_mask |= (1u << wi);
+
+              //if we got all words, publish a new packet
+              if (usb_mask == usb_full_mask()) {
+                usb_rx_seq++;
+                usb_mask = 0;
+              }
+            }
+
+            last_addr += 4; //consumed two halfwords
+
+          } else {
+            //new address starts
+            break;
           }
-        }
-        
-        alt_usb_debug_word = last_addr;
-        addr = n64_pi_get_value(pio);
-      }else if(last_addr == READ_USB_Y_ADDR){
-        addr = n64_pi_get_value(pio);
-				
-        if ((addr & 0xffff0000) == 0xffff0000) {//write
-          crash_alt_usb_debug_word = last_addr;  
-        }else{//read
-          // Send the higher 16 bits first
-          pio_sm_put(pio, 0, (incoming_usb_y_word >> 16));
+
+        } while (1);
+
+      } else {
+        //normal sram handling
+        uint16_t *sram_ptr = &sram[sram_resolve_address_shifted(last_addr)];
+        do {
           addr = n64_pi_get_value(pio);
-          pio_sm_put(pio, 0, incoming_usb_y_word & 0xFFFF);
-        }
-        
-        alt_usb_debug_word = last_addr;
-        addr = n64_pi_get_value(pio);
-      }else if(last_addr == READ_USB_Z_ADDR){
-        addr = n64_pi_get_value(pio);
-				
-        if ((addr & 0xffff0000) == 0xffff0000) {//write
-          crash_alt_usb_debug_word = last_addr;  
-        }else{//read    
-          // Send the higher 16 bits first
-          pio_sm_put(pio, 0, (incoming_usb_z_word >> 16));
-          addr = n64_pi_get_value(pio);
-          pio_sm_put(pio, 0, incoming_usb_z_word & 0xFFFF);
-        }
-        
-        alt_usb_debug_word = last_addr;
-        addr = n64_pi_get_value(pio);
-      }else if (last_addr >= USB_Z_ADDR+4 && last_addr <= CART_SRAM_END) {
-			// Domain 2, Address 2 Cartridge SRAM
 
-			// Calculate start pointer
-			uint16_t *sram_ptr = &sram[sram_resolve_address_shifted(last_addr)];
-			do {
-				// Read command/address
-				addr = n64_pi_get_value(pio);
+          if ((addr & 0xFFFF0000u) == 0xFFFF0000u) {
+            //write halfword to sram
+            *(sram_ptr++) = swap8(addr);
+            last_addr += 2;
+          } else if (addr == 0) {
+            //read halfword from sram
+            pio_sm_put(pio, 0, *(sram_ptr++));
+            last_addr += 2;
+          } else {
+            //new address
+            break;
+          }
+        } while (1);
+      }
 
-				if ((addr & 0xffff0000) == 0xffff0000) {//write
-          
-           switch (currUsbVal) {
-             case 0:
-               outgoing_usb_x_word = ((addr & 0xFFFF) << 16) | (n64_pi_get_value(pio) & 0xFFFF);//get full word
-             break;
-             case 1:
-               outgoing_usb_y_word = ((addr & 0xFFFF) << 16) | (n64_pi_get_value(pio) & 0xFFFF);//get full word
-             break;
-             case 2:
-               outgoing_usb_z_word = ((addr & 0xFFFF) << 16) | (n64_pi_get_value(pio) & 0xFFFF);//get full word
-             break;
-           }
-
-           currUsbVal++;
-           if (currUsbVal == 3) {
-             currUsbVal = 0;
-             addr = n64_pi_get_value(pio);
-             break;
-           }
-
-         alt_usb_debug_word = last_addr+currUsbVal;//debug out
-				} else if (addr == 0) {
-					// READ
-					pio_sm_put(pio, 0, *(sram_ptr++));
-          alt_usb_debug_word = last_addr+2;
-					// More readable:
-					// next_word = sram[sram_resolve_address_shifted(last_addr)];
-					// pio_sm_put(pio, 0, next_word);
-					// last_addr += 2;
-				} else {
-					// New address
-					break;
-				}
-			} while (1);
     } else if (last_addr >= PC64_BASE_ADDRESS_START &&
                last_addr <= PC64_BASE_ADDRESS_END) {
       // PicoCart64 BASE address space
@@ -313,6 +281,7 @@ void n64_pi_run(void) {
           break;
         }
       } while (1);
+
     } else if (last_addr >= PC64_RAND_ADDRESS_START &&
                last_addr <= PC64_RAND_ADDRESS_END) {
 
@@ -334,6 +303,7 @@ void n64_pi_run(void) {
           break;
         }
       } while (1);
+
     } else if (last_addr >= PC64_CIBASE_ADDRESS_START &&
                last_addr <= PC64_CIBASE_ADDRESS_END) {
       // PicoCart64 CIBASE address space
@@ -350,9 +320,6 @@ void n64_pi_run(void) {
             break;
           case PC64_REGISTER_FLASH_JEDEC_ID:
             next_word = g_flash_jedec_id;
-            break;
-          case PC64_REGISTER_UART_RX:
-            next_word = incoming_usb_store_word;
             break;
           default:
             printf("DEFAULT\n");
@@ -372,6 +339,7 @@ void n64_pi_run(void) {
 
           pio_sm_put(pio, 0, next_word & 0xFFFF);
           last_addr += 2;
+
         } else if ((addr & 0xffff0000) == 0xffff0000) {
           // WRITE
 
@@ -381,10 +349,6 @@ void n64_pi_run(void) {
 
           switch (last_addr - PC64_CIBASE_ADDRESS_START) {
           case PC64_REGISTER_UART_TX:
-            // stdio_uart_out_chars((const char *)pc64_uart_tx_buf, write_word
-            // & (sizeof(pc64_uart_tx_buf) - 1));
-            //  printf(""%.*s", write_word & (sizeof(pc64_uart_tx_buf) - 1),
-            //    pc64_uart_tx_buf");
             break;
           case PC64_REGISTER_RAND_SEED:
             pc64_rand_seed(write_word);
@@ -394,17 +358,17 @@ void n64_pi_run(void) {
           }
 
           last_addr += 4;
+
         } else {
           // New address
           break;
         }
       } while (1);
+
     } else {
       // Don't handle this request - jump back to the beginning.
       // This way, there won't be a bus conflict in case e.g. a physical N64DD
       // is connected.
-
-      crash_alt_usb_debug_word = last_addr;
 
       // Read to empty fifo
       addr = n64_pi_get_value(pio);

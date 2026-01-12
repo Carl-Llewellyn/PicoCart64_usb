@@ -42,10 +42,10 @@
 // [READ] RX BUFF
 #define PC64_REGISTER_UART_RX 0x00000010
 
-#define USB_X_ADDR CART_SRAM_START
-#define USB_Y_ADDR (USB_X_ADDR + 4)
-#define USB_Z_ADDR (USB_Y_ADDR + 4)
 
-#define READ_USB_X_ADDR (USB_Z_ADDR + 4)
-#define READ_USB_Y_ADDR (READ_USB_X_ADDR + 4)
-#define READ_USB_Z_ADDR (READ_USB_Y_ADDR + 4)
+//usb ones.. just taking over SRAM 
+#define USB_COMM_BASE  CART_SRAM_START
+#define USB_COMM_BYTES 24u
+#define USB_COMM_END   (USB_COMM_BASE + USB_COMM_BYTES - 1u)
+
+#define USB_COMM_WORDS (USB_COMM_BYTES / 4u)   // 6

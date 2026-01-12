@@ -9,23 +9,6 @@
 #include <stdint.h>
 #include "FreeRTOS.h"
 
-// Buffer for USB data
-#define USB_BUFFER_SIZE 64
-
-static uint8_t __attribute__((aligned(16))) usb_buffer[USB_BUFFER_SIZE];
-extern uint32_t usb_bytes_received;
-extern _Atomic uint32_t incoming_usb_store_word;
-extern _Atomic uint32_t outgoing_usb_x_word;
-extern _Atomic uint32_t outgoing_usb_y_word;
-extern _Atomic uint32_t outgoing_usb_z_word;
-extern _Atomic uint32_t alt_usb_debug_word;
-extern _Atomic uint32_t crash_alt_usb_debug_word;
-
-extern _Atomic uint32_t incoming_usb_x_word;
-extern _Atomic uint32_t incoming_usb_y_word;
-extern _Atomic uint32_t incoming_usb_z_word;
-
-
 /// @brief Macro to get the size of an array
 #define ARRAY_SIZE(x) (sizeof(x)/sizeof(x[0]))
 

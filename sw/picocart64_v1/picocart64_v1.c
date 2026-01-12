@@ -59,6 +59,93 @@ void vApplicationGetTimerTaskMemory(StaticTask_t **ppxTimerTaskTCBBuffer,
   *pulTimerTaskStackSize = configTIMER_TASK_STACK_DEPTH;
 }
 
+static inline uint16_t bswap16(uint16_t x) { return (uint16_t)((x << 8) | (x >> 8)); }
+static inline uint32_t bswap32(uint32_t x) {
+  return ((x & 0x000000FFu) << 24) |
+         ((x & 0x0000FF00u) <<  8) |
+         ((x & 0x00FF0000u) >>  8) |
+         ((x & 0xFF000000u) >> 24);
+}
+
+//Convert N64-word order -> USB little-endian bytes 
+static void words_to_usb_le_bytes(uint8_t out22[22], const uint32_t words6[USB_COMM_WORDS]) {
+  uint8_t tmp24[24];
+  for (int i = 0; i < USB_COMM_WORDS; i++) {
+    uint32_t w = words6[i];
+    //N64 big-endian bytes 
+    tmp24[i*4+0] = (uint8_t)(w >> 24);
+    tmp24[i*4+1] = (uint8_t)(w >> 16);
+    tmp24[i*4+2] = (uint8_t)(w >>  8);
+    tmp24[i*4+3] = (uint8_t)(w >>  0);
+  }
+
+  //header bytes as-is 
+  out22[0] = tmp24[0];
+  out22[1] = tmp24[1];
+  out22[2] = tmp24[2];
+  out22[3] = tmp24[3];
+
+  //3x float words (bytes 4..15): swap 32-bit endianness 
+  for (int k = 0; k < 3; k++) {
+    uint32_t be =
+      ((uint32_t)tmp24[4 + k*4 + 0] << 24) |
+      ((uint32_t)tmp24[4 + k*4 + 1] << 16) |
+      ((uint32_t)tmp24[4 + k*4 + 2] <<  8) |
+      ((uint32_t)tmp24[4 + k*4 + 3] <<  0);
+    uint32_t le = bswap32(be);
+    memcpy(out22 + 4 + k*4, &le, 4);
+  }
+
+  //buttons u16 (bytes 16..17): swap 16-bit endianness 
+  {
+    uint16_t be = (uint16_t)((tmp24[16] << 8) | tmp24[17]);
+    uint16_t le = bswap16(be);
+    memcpy(out22 + 16, &le, 2);
+  }
+
+  //sticks (18,19) and remaining (20,21)
+  out22[18] = tmp24[18];
+  out22[19] = tmp24[19];
+  out22[20] = tmp24[20];
+  out22[21] = tmp24[21];
+}
+
+//Convert USB little-endian bytes -> N64 words (big-endian word meaning)
+static void usb_le_bytes_to_words(uint32_t out_words6[USB_COMM_WORDS], const uint8_t in22[22]) {
+  uint8_t tmp24[24] = {0};
+  memcpy(tmp24, in22, 22);
+
+  //floats: input is little-endian 32-bit; convert back to big-endian bytes 
+  for (int k = 0; k < 3; k++) {
+    uint32_t le;
+    memcpy(&le, in22 + 4 + k*4, 4);
+    uint32_t be = bswap32(le);
+    tmp24[4 + k*4 + 0] = (uint8_t)(be >> 24);
+    tmp24[4 + k*4 + 1] = (uint8_t)(be >> 16);
+    tmp24[4 + k*4 + 2] = (uint8_t)(be >>  8);
+    tmp24[4 + k*4 + 3] = (uint8_t)(be >>  0);
+  }
+
+  //buttons: input little-endian u16 -> big-endian bytes 
+  {
+    uint16_t le;
+    memcpy(&le, in22 + 16, 2);
+    uint16_t be = bswap16(le);
+    tmp24[16] = (uint8_t)(be >> 8);
+    tmp24[17] = (uint8_t)(be & 0xFF);
+  }
+
+  //Pack bytes into 6 words (big-endian meaning) 
+  for (int i = 0; i < USB_COMM_WORDS; i++) {
+    out_words6[i] =
+      ((uint32_t)tmp24[i*4+0] << 24) |
+      ((uint32_t)tmp24[i*4+1] << 16) |
+      ((uint32_t)tmp24[i*4+2] <<  8) |
+      ((uint32_t)tmp24[i*4+3] <<  0);
+  }
+}
+
+
 void cic_task_entry(__unused void *params) {
   printf("cic_task_entry\n");
 
@@ -78,68 +165,77 @@ void cic_task_entry(__unused void *params) {
 StaticTask_t incoming_usb_task;
 StackType_t incoming_usb_task_stack[USB_TASK_STACK_SIZE];
 
-
 void incoming_usb_task_entry(void *pvParameters) {
- while (true) {
-    // Wait until USB is connected
+  uint8_t accum[22];
+  int acc_n = 0;
+
+  while (true) {
     while (!tud_cdc_connected()) {
       vTaskDelay(pdMS_TO_TICKS(1000));
     }
 
-    // Check for available data
-    if (tud_cdc_available()) {
-      usb_bytes_received = tud_cdc_read(usb_buffer, USB_BUFFER_SIZE);
-      if (usb_bytes_received >= 3 * sizeof(uint32_t)) {
-        // Read and swap the x, y, and z values
-        incoming_usb_x_word = *(uint32_t *) &usb_buffer[0];
-        incoming_usb_y_word = *(uint32_t *) &usb_buffer[4];
-        incoming_usb_z_word = *(uint32_t *) &usb_buffer[8];
+    while (tud_cdc_available()) {
+      uint8_t tmp[64];
+      uint32_t n = tud_cdc_read(tmp, sizeof(tmp));
+
+      for (uint32_t i = 0; i < n; i++) {
+        accum[acc_n++] = tmp[i];
+
+        if (acc_n == 22) {
+          uint32_t words[USB_COMM_WORDS];
+          usb_le_bytes_to_words(words, accum);
+
+          uint32_t next = (usb_tx_seq + 1u) & 1u;
+          for (int w = 0; w < USB_COMM_WORDS; w++) {
+            usb_tx_words_buf[next][w] = words[w];
+          }
+
+          usb_tx_seq++;
+
+          acc_n = 0;
+        }
       }
     }
 
-    // Yield to other tasks
-    vTaskDelay(pdMS_TO_TICKS(10));
+    vTaskDelay(pdMS_TO_TICKS(1));
   }
-
 }
+
 
 
 StaticTask_t outgoing_usb_task;
 StackType_t outgoing_usb_task_stack[USB_TASK_STACK_SIZE];
 
 void outgoing_usb_task_entry(void *pvParameters) {
-
-  uint32_t lastXSentData = 0;
-  uint32_t lastYSentData = 0;
-  uint32_t lastZSentData = 0;
-  uint32_t debugSentData = 0;
-  uint32_t crashDebugSentData = 0;
+  uint32_t last_seq = 0;
 
   while (true) {
-    // Wait until USB is connected
     while (!tud_cdc_connected()) {
       vTaskDelay(pdMS_TO_TICKS(1000));
     }
 
-    if (lastXSentData != outgoing_usb_x_word || lastYSentData != outgoing_usb_y_word || lastZSentData != outgoing_usb_z_word) {
-     // printf("X: %f, Y: %f, Z: %f\n", ((float*)&outgoing_usb_x_word), ((float*)&outgoing_usb_y_word), ((float*)&outgoing_usb_z_word));
-      printf("X:  %f, Y:  %f, Z:  %f\n", *(float *)&outgoing_usb_x_word, *(float *)&outgoing_usb_y_word, *(float *)&outgoing_usb_z_word);//convert back to float
-      lastXSentData = outgoing_usb_x_word;
-      lastYSentData = outgoing_usb_y_word;
-      lastZSentData = outgoing_usb_z_word;
+    uint32_t seq = usb_rx_seq;
+    if (seq != last_seq) {
+      uint32_t snap[USB_COMM_WORDS];
+      uint32_t seq2;
+
+      /* seqlock-ish snapshot: copy, recheck */
+      do {
+        seq = usb_rx_seq;
+        for (int i = 0; i < USB_COMM_WORDS; i++) snap[i] = usb_rx_words[i];
+        seq2 = usb_rx_seq;
+      } while (seq != seq2);
+
+      uint8_t pkt[22];
+      words_to_usb_le_bytes(pkt, snap);
+
+      tud_cdc_write(pkt, sizeof(pkt));
+      tud_cdc_write_flush();
+
+      last_seq = seq2;
     }
 
-    if (debugSentData != alt_usb_debug_word) {
-      printf("D: 0x%08X.\n", alt_usb_debug_word);
-      debugSentData = alt_usb_debug_word;
-    }
-
-    if (crashDebugSentData != crash_alt_usb_debug_word) {
-      printf("CR: 0x%08X.\n", crash_alt_usb_debug_word);
-      crashDebugSentData = crash_alt_usb_debug_word;
-    }
-      // Yield to other tasks
-      vTaskDelay(pdMS_TO_TICKS(10));
+    vTaskDelay(pdMS_TO_TICKS(1));
   }
 }
 
