@@ -54,7 +54,7 @@ static uint16_t pc64_uart_tx_buf[PC64_BASE_ADDRESS_LENGTH];
 #endif
 
 #ifndef USB_COMM_BYTES
-#define USB_COMM_BYTES 24u
+#define USB_COMM_BYTES 32u
 #endif
 
 #ifndef USB_COMM_END

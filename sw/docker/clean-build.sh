@@ -48,5 +48,5 @@ docker run --rm \
     && python3 ${CONTAINER_SW_DIR}/scripts/load_rom.py --compress /rom.z64 \
     && mkdir ${CONTAINER_SW_DIR}/build \
     && cd ${CONTAINER_SW_DIR}/build \
-    && cmake -DPICO_SDK_PATH=/opt/pico-sdk -DREGION=${REGION} -DFLASH_SIZE_MB=${FLASH_SIZE_MB} .. \
+    && cmake -DPICO_SDK_PATH=/opt/pico-sdk -DREGION=${REGION} -DFLASH_SIZE_MB=${FLASH_SIZE_MB} -DPICO_FLASH_SIZE_BYTES=16777216 .. \
     && cmake --build ${CONTAINER_SW_DIR}/build --target picocart64_v1 -j ${JOBS}"

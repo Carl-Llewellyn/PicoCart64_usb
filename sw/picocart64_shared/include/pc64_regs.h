@@ -43,9 +43,10 @@
 #define PC64_REGISTER_UART_RX 0x00000010
 
 
-//usb ones.. just taking over SRAM 
+// usb ones.. just taking over SRAM
 #define USB_COMM_BASE  CART_SRAM_START
-#define USB_COMM_BYTES 24u
+#define USB_COMM_BYTES 32u
 #define USB_COMM_END   (USB_COMM_BASE + USB_COMM_BYTES - 1u)
 
-#define USB_COMM_WORDS (USB_COMM_BYTES / 4u)   // 6
+#define USB_COMM_WORDS (USB_COMM_BYTES / 4u)   // 8
+#define USB_COMM_PKT_BYTES 30u

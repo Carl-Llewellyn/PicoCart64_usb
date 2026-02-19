@@ -13,6 +13,7 @@
 #include "hardware/flash.h"
 #include "hardware/irq.h"
 #include "pico/multicore.h"
+#include "pico/bootrom.h"
 #include "tusb.h"
 
 #include "pico/stdlib.h"
@@ -67,81 +68,109 @@ static inline uint32_t bswap32(uint32_t x) {
          ((x & 0xFF000000u) >> 24);
 }
 
-//Convert N64-word order -> USB little-endian bytes 
-static void words_to_usb_le_bytes(uint8_t out22[22], const uint32_t words6[USB_COMM_WORDS]) {
-  uint8_t tmp24[24];
+static bool is_bootsel_command(const uint8_t pkt[22]) {
+  static const uint8_t magic[22] = {
+    0x50, 0x43, 0x36, 0x34, 0x42, 0x4f, 0x4f, 0x54, 0x53, 0x45, 0x4c,
+    0x21, 0x21, 0x21, 0x21, 0x21, 0x21, 0x21, 0x21, 0x21, 0x21, 0x21
+  };
+  for (int i = 0; i < 22; i++) {
+    if (pkt[i] != magic[i]) {
+      return false;
+    }
+  }
+  return true;
+}
+
+static bool bootsel_ring_match(const uint8_t ring[22], int head) {
+  static const uint8_t magic[22] = {
+    0x50, 0x43, 0x36, 0x34, 0x42, 0x4f, 0x4f, 0x54, 0x53, 0x45, 0x4c,
+    0x21, 0x21, 0x21, 0x21, 0x21, 0x21, 0x21, 0x21, 0x21, 0x21, 0x21
+  };
+  for (int i = 0; i < 22; i++) {
+    if (ring[(head + i) % 22] != magic[i]) {
+      return false;
+    }
+  }
+  return true;
+}
+
+// Convert N64-word order -> USB little-endian bytes
+static void words_to_usb_le_bytes(uint8_t out30[USB_COMM_PKT_BYTES],
+                                  const uint32_t words[USB_COMM_WORDS]) {
+  uint8_t tmp32[USB_COMM_BYTES];
   for (int i = 0; i < USB_COMM_WORDS; i++) {
-    uint32_t w = words6[i];
+    uint32_t w = words[i];
     //N64 big-endian bytes 
-    tmp24[i*4+0] = (uint8_t)(w >> 24);
-    tmp24[i*4+1] = (uint8_t)(w >> 16);
-    tmp24[i*4+2] = (uint8_t)(w >>  8);
-    tmp24[i*4+3] = (uint8_t)(w >>  0);
+    tmp32[i*4+0] = (uint8_t)(w >> 24);
+    tmp32[i*4+1] = (uint8_t)(w >> 16);
+    tmp32[i*4+2] = (uint8_t)(w >>  8);
+    tmp32[i*4+3] = (uint8_t)(w >>  0);
   }
 
   //header bytes as-is 
-  out22[0] = tmp24[0];
-  out22[1] = tmp24[1];
-  out22[2] = tmp24[2];
-  out22[3] = tmp24[3];
+  out30[0] = tmp32[0];
+  out30[1] = tmp32[1];
+  out30[2] = tmp32[2];
+  out30[3] = tmp32[3];
 
   //3x float words (bytes 4..15): swap 32-bit endianness 
   for (int k = 0; k < 3; k++) {
     uint32_t be =
-      ((uint32_t)tmp24[4 + k*4 + 0] << 24) |
-      ((uint32_t)tmp24[4 + k*4 + 1] << 16) |
-      ((uint32_t)tmp24[4 + k*4 + 2] <<  8) |
-      ((uint32_t)tmp24[4 + k*4 + 3] <<  0);
+      ((uint32_t)tmp32[4 + k*4 + 0] << 24) |
+      ((uint32_t)tmp32[4 + k*4 + 1] << 16) |
+      ((uint32_t)tmp32[4 + k*4 + 2] <<  8) |
+      ((uint32_t)tmp32[4 + k*4 + 3] <<  0);
     uint32_t le = bswap32(be);
-    memcpy(out22 + 4 + k*4, &le, 4);
+    memcpy(out30 + 4 + k*4, &le, 4);
   }
 
-  //buttons u16 (bytes 16..17): swap 16-bit endianness 
-  {
-    uint16_t be = (uint16_t)((tmp24[16] << 8) | tmp24[17]);
+  // s16 fields (bytes 16..23) + buttons (24..25): swap 16-bit endianness
+  for (int i = 16; i <= 24; i += 2) {
+    uint16_t be = (uint16_t)((tmp32[i] << 8) | tmp32[i + 1]);
     uint16_t le = bswap16(be);
-    memcpy(out22 + 16, &le, 2);
+    memcpy(out30 + i, &le, 2);
   }
 
-  //sticks (18,19) and remaining (20,21)
-  out22[18] = tmp24[18];
-  out22[19] = tmp24[19];
-  out22[20] = tmp24[20];
-  out22[21] = tmp24[21];
+  // sticks (26,27) + reserved (28,29)
+  out30[26] = tmp32[26];
+  out30[27] = tmp32[27];
+  out30[28] = tmp32[28];
+  out30[29] = tmp32[29];
 }
 
-//Convert USB little-endian bytes -> N64 words (big-endian word meaning)
-static void usb_le_bytes_to_words(uint32_t out_words6[USB_COMM_WORDS], const uint8_t in22[22]) {
-  uint8_t tmp24[24] = {0};
-  memcpy(tmp24, in22, 22);
+// Convert USB little-endian bytes -> N64 words (big-endian word meaning)
+static void usb_le_bytes_to_words(uint32_t out_words[USB_COMM_WORDS],
+                                  const uint8_t in30[USB_COMM_PKT_BYTES]) {
+  uint8_t tmp32[USB_COMM_BYTES] = {0};
+  memcpy(tmp32, in30, USB_COMM_PKT_BYTES);
 
-  //floats: input is little-endian 32-bit; convert back to big-endian bytes 
+  // floats: input is little-endian 32-bit; convert back to big-endian bytes
   for (int k = 0; k < 3; k++) {
     uint32_t le;
-    memcpy(&le, in22 + 4 + k*4, 4);
+    memcpy(&le, in30 + 4 + k*4, 4);
     uint32_t be = bswap32(le);
-    tmp24[4 + k*4 + 0] = (uint8_t)(be >> 24);
-    tmp24[4 + k*4 + 1] = (uint8_t)(be >> 16);
-    tmp24[4 + k*4 + 2] = (uint8_t)(be >>  8);
-    tmp24[4 + k*4 + 3] = (uint8_t)(be >>  0);
+    tmp32[4 + k*4 + 0] = (uint8_t)(be >> 24);
+    tmp32[4 + k*4 + 1] = (uint8_t)(be >> 16);
+    tmp32[4 + k*4 + 2] = (uint8_t)(be >>  8);
+    tmp32[4 + k*4 + 3] = (uint8_t)(be >>  0);
   }
 
-  //buttons: input little-endian u16 -> big-endian bytes 
-  {
+  // s16 fields (bytes 16..23) + buttons (24..25): input little-endian -> big-endian bytes
+  for (int i = 16; i <= 24; i += 2) {
     uint16_t le;
-    memcpy(&le, in22 + 16, 2);
+    memcpy(&le, in30 + i, 2);
     uint16_t be = bswap16(le);
-    tmp24[16] = (uint8_t)(be >> 8);
-    tmp24[17] = (uint8_t)(be & 0xFF);
+    tmp32[i] = (uint8_t)(be >> 8);
+    tmp32[i + 1] = (uint8_t)(be & 0xFF);
   }
 
-  //Pack bytes into 6 words (big-endian meaning) 
+  // Pack bytes into words (big-endian meaning)
   for (int i = 0; i < USB_COMM_WORDS; i++) {
-    out_words6[i] =
-      ((uint32_t)tmp24[i*4+0] << 24) |
-      ((uint32_t)tmp24[i*4+1] << 16) |
-      ((uint32_t)tmp24[i*4+2] <<  8) |
-      ((uint32_t)tmp24[i*4+3] <<  0);
+    out_words[i] =
+      ((uint32_t)tmp32[i*4+0] << 24) |
+      ((uint32_t)tmp32[i*4+1] << 16) |
+      ((uint32_t)tmp32[i*4+2] <<  8) |
+      ((uint32_t)tmp32[i*4+3] <<  0);
   }
 }
 
@@ -166,8 +195,11 @@ StaticTask_t incoming_usb_task;
 StackType_t incoming_usb_task_stack[USB_TASK_STACK_SIZE];
 
 void incoming_usb_task_entry(void *pvParameters) {
-  uint8_t accum[22];
+  uint8_t accum[USB_COMM_PKT_BYTES];
   int acc_n = 0;
+  uint8_t bootsel_ring[22];
+  int bootsel_head = 0;
+  int bootsel_count = 0;
 
   while (true) {
     while (!tud_cdc_connected()) {
@@ -179,9 +211,18 @@ void incoming_usb_task_entry(void *pvParameters) {
       uint32_t n = tud_cdc_read(tmp, sizeof(tmp));
 
       for (uint32_t i = 0; i < n; i++) {
-        accum[acc_n++] = tmp[i];
+        uint8_t byte = tmp[i];
+        accum[acc_n++] = byte;
+        bootsel_ring[bootsel_head] = byte;
+        bootsel_head = (bootsel_head + 1) % 22;
+        if (bootsel_count < 22) {
+          bootsel_count++;
+        }
+        if (bootsel_count == 22 && bootsel_ring_match(bootsel_ring, bootsel_head)) {
+          reset_usb_boot(0, 0);
+        }
 
-        if (acc_n == 22) {
+        if (acc_n == USB_COMM_PKT_BYTES) {
           uint32_t words[USB_COMM_WORDS];
           usb_le_bytes_to_words(words, accum);
 
@@ -226,7 +267,7 @@ void outgoing_usb_task_entry(void *pvParameters) {
         seq2 = usb_rx_seq;
       } while (seq != seq2);
 
-      uint8_t pkt[22];
+      uint8_t pkt[USB_COMM_PKT_BYTES];
       words_to_usb_le_bytes(pkt, snap);
 
       tud_cdc_write(pkt, sizeof(pkt));
