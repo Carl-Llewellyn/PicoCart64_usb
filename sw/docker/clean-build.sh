@@ -1,8 +1,35 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+NO_ROM_COMPRESS=0
+POSITIONAL=()
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --no-rom-compress)
+      NO_ROM_COMPRESS=1
+      shift
+      ;;
+    -h|--help)
+      echo "Usage: $0 [--no-rom-compress] /absolute/path/to/rom.z64"
+      exit 0
+      ;;
+    -*)
+      echo "Unknown option: $1" >&2
+      echo "Usage: $0 [--no-rom-compress] /absolute/path/to/rom.z64" >&2
+      exit 1
+      ;;
+    *)
+      POSITIONAL+=("$1")
+      shift
+      ;;
+  esac
+done
+
+set -- "${POSITIONAL[@]}"
+
 if [[ $# -lt 1 ]]; then
-  echo "Usage: $0 /absolute/path/to/rom.z64"
+  echo "Usage: $0 [--no-rom-compress] /absolute/path/to/rom.z64"
   exit 1
 fi
 
@@ -25,6 +52,11 @@ JOBS=${JOBS:-$(nproc)}
 FREERTOS_KERNEL_REF=${FREERTOS_KERNEL_REF:-V11.1.0}
 FORCE_FREERTOS_REF=${FORCE_FREERTOS_REF:-0}
 
+LOAD_ROM_COMPRESS_ARG="--compress"
+if [[ "${NO_ROM_COMPRESS}" == "1" ]]; then
+  LOAD_ROM_COMPRESS_ARG=""
+fi
+
 if [[ ! -d "${SW_DIR}/lib/freertos-kernel" || -z "$(ls -A "${SW_DIR}/lib/freertos-kernel" 2>/dev/null)" ]]; then
   echo "FreeRTOS kernel missing; initializing in ${SW_DIR}/lib/freertos-kernel" >&2
   rm -rf "${SW_DIR}/lib/freertos-kernel"
@@ -45,7 +77,7 @@ docker run --rm \
   -e PICO_SDK_PATH=/opt/pico-sdk \
   "${IMAGE_TAG}" \
   bash -lc "rm -rf ${CONTAINER_SW_DIR}/build ${CONTAINER_SW_DIR}/CMakeCache.txt ${CONTAINER_SW_DIR}/CMakeFiles \
-    && python3 ${CONTAINER_SW_DIR}/scripts/load_rom.py --compress /rom.z64 \
+    && python3 ${CONTAINER_SW_DIR}/scripts/load_rom.py ${LOAD_ROM_COMPRESS_ARG} /rom.z64 \
     && mkdir ${CONTAINER_SW_DIR}/build \
     && cd ${CONTAINER_SW_DIR}/build \
     && cmake -DPICO_SDK_PATH=/opt/pico-sdk -DREGION=${REGION} -DFLASH_SIZE_MB=${FLASH_SIZE_MB} -DPICO_FLASH_SIZE_BYTES=16777216 .. \
