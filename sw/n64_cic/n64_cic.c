@@ -62,8 +62,8 @@ static volatile uint8_t cic_next_wr;
 
 static volatile bool cic_disabled = false;
 static volatile bool cic_dd_mode = false;
-static volatile uint8_t cic_seed = 0x3F;
-static volatile uint8_t cic_checksum[6] = { 0xA5, 0x36, 0xC0, 0xF1, 0xD8, 0x59 };
+static volatile uint8_t cic_seed = 0x91;
+static volatile uint8_t cic_checksum[6] = { 0x86, 0x18, 0xA4, 0x5B, 0xC2, 0xD3 };
 
 SemaphoreHandle_t xSemaphore = NULL;
 StaticSemaphore_t xSemaphoreBuffer;
@@ -401,13 +401,13 @@ void n64_cic_reset_parameters(void)
 {
 	cic_disabled = false;
 	cic_dd_mode = false;
-	cic_seed = 0x3F;
-	cic_checksum[0] = 0xA5;
-	cic_checksum[1] = 0x36;
-	cic_checksum[2] = 0xC0;
-	cic_checksum[3] = 0xF1;
-	cic_checksum[4] = 0xD8;
-	cic_checksum[5] = 0x59;
+	cic_seed = 0x91;
+	cic_checksum[0] = 0x86;
+	cic_checksum[1] = 0x18;
+	cic_checksum[2] = 0xA4;
+	cic_checksum[3] = 0x5B;
+	cic_checksum[4] = 0xC2;
+	cic_checksum[5] = 0xD3;
 }
 
 void n64_cic_set_parameters(uint32_t * args)
