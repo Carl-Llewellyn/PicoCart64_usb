@@ -49,18 +49,6 @@ RINGBUF_CREATE(ringbuf, 64, uint32_t);
 // UART TX buffer
 static uint16_t pc64_uart_tx_buf[PC64_BASE_ADDRESS_LENGTH];
 
-#ifndef USB_COMM_BASE
-#define USB_COMM_BASE CART_SRAM_START
-#endif
-
-#ifndef USB_COMM_BYTES
-#define USB_COMM_BYTES 32u
-#endif
-
-#ifndef USB_COMM_END
-#define USB_COMM_END (USB_COMM_BASE + USB_COMM_BYTES - 1u)
-#endif
-
 static inline uint32_t usb_full_mask(void) {
   return (USB_COMM_WORDS >= 32) ? 0xFFFFFFFFu : ((1u << USB_COMM_WORDS) - 1u);
 }
@@ -175,11 +163,18 @@ void n64_pi_run(void) {
 
     } else if (last_addr >= CART_SRAM_START && last_addr <= CART_SRAM_END) {
 
-      //intercept our comm window
-      if (last_addr >= USB_COMM_BASE && last_addr <= USB_COMM_END) {
+      // Intercept the OOT USB windows inside SRAM.
+      if ((last_addr >= USB_COMM_N64_WRITE_BASE &&
+           last_addr <= USB_COMM_N64_WRITE_END) ||
+          (last_addr >= USB_COMM_N64_READ_BASE &&
+           last_addr <= USB_COMM_N64_READ_END)) {
+        bool in_write_window = (last_addr >= USB_COMM_N64_WRITE_BASE &&
+                                last_addr <= USB_COMM_N64_WRITE_END);
+        uint32_t window_base = in_write_window ? USB_COMM_N64_WRITE_BASE
+                                               : USB_COMM_N64_READ_BASE;
 
-        //reset packet mask when a new stream starts at the base
-        if (last_addr == USB_COMM_BASE) {
+        // Reset packet mask when a new outgoing N64 packet starts.
+        if (in_write_window && last_addr == USB_COMM_N64_WRITE_BASE) {
           usb_mask = 0;
         }
 
@@ -187,16 +182,23 @@ void n64_pi_run(void) {
           addr = n64_pi_get_value(pio);
 
           if (addr == 0) {
-            //read: return 16-bit halfwords from current tx buffer
-            uint32_t off_hw = (last_addr - USB_COMM_BASE) >> 1; //halfword index
-            uint32_t wi     = off_hw >> 1;                      //word index
-            uint32_t hi     = ((off_hw & 1u) == 0u);            //even => high16
+            // Read 16-bit halfwords from the active buffer for this window.
+            uint32_t off_hw = (last_addr - window_base) >> 1;
+            uint32_t wi     = off_hw >> 1;
+            uint32_t hi     = ((off_hw & 1u) == 0u);
 
             uint16_t out = 0;
-            uint32_t txi = usb_tx_seq & 1u; //active buffer index
 
             if (wi < USB_COMM_WORDS) {
-              uint32_t w = usb_tx_words_buf[txi][wi];
+              uint32_t w;
+              if (in_write_window) {
+                // OOT performs a throwaway read on the write window after DMA.
+                // Echo the latest captured N64 packet there.
+                w = usb_rx_words[wi];
+              } else {
+                uint32_t txi = usb_tx_seq & 1u;
+                w = usb_tx_words_buf[txi][wi];
+              }
               out = hi ? (uint16_t)(w >> 16) : (uint16_t)(w & 0xFFFFu);
             }
 
@@ -209,13 +211,13 @@ void n64_pi_run(void) {
             uint16_t lo16 = (uint16_t)(n64_pi_get_value(pio) & 0xFFFFu);
             uint32_t w    = ((uint32_t)hi16 << 16) | (uint32_t)lo16;
 
-            uint32_t wi = (last_addr - USB_COMM_BASE) >> 2; //word index 0..(USB_COMM_WORDS-1)
+            uint32_t wi = (last_addr - window_base) >> 2;
 
-            if (wi < USB_COMM_WORDS) {
+            if (in_write_window && wi < USB_COMM_WORDS) {
               usb_rx_words[wi] = w;
               usb_mask |= (1u << wi);
 
-              //if we got all words, publish a new packet
+              // Publish a new packet once the full window is written.
               if (usb_mask == usb_full_mask()) {
                 usb_rx_seq++;
                 usb_mask = 0;
